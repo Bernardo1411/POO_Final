@@ -3,6 +3,9 @@ from PIL import Image
 import PIL.ImageFile
 from PIL.ExifTags import TAGS, GPSTAGS
 from typing import List, Tuple
+import tkinter
+import tkintermapview
+import tkinter as tk
 
 def converte_graus_para_decimais(tup: Tuple[int, int, int], ref: str) -> float:
     '''
@@ -34,6 +37,8 @@ class Imagem:
         self._data = None  # data de captura da imagem
         self._lat = None  # latitude da captura da imagem
         self._lon = None  # longitude da captura da imagem
+        self._city = None
+        self._country = None
         self._img = self.abre(nome)
         self._processa_EXIF()
 
@@ -71,6 +76,8 @@ class Imagem:
 
                 self._lat = converte_graus_para_decimais(tup_lat, ref_lat)
                 self._lon = converte_graus_para_decimais(tup_lon, ref_lon)
+                self._city = tkintermapview.convert_coordinates_to_city(self._lat, self._lon)
+                self._country = tkintermapview.convert_coordinates_to_country(self._lat, self._lon)
 
             if TAGS.get(c) == 'DateTime':
                 self._data = datetime.strptime(v, '%Y:%m:%d %H:%M:%S')
@@ -85,6 +92,13 @@ class Imagem:
         aberto.
         '''
         return Image.open(nome)
+
+    @property
+    def nome(self) -> str:
+        '''
+        Retorna o nome da imagem.
+        '''
+        return self._nome
 
     @property
     def largura(self) -> int:
@@ -131,6 +145,22 @@ class Imagem:
         em que a imagem foi capturada
         '''
         return self._lon
+    
+    @property
+    def city(self) -> str:
+        '''
+        Retorna a cidade
+        em que a imagem foi capturada
+        '''
+        return self._city
+    
+    @property
+    def country(self) -> str:
+        '''
+        Retorna o país
+        em que a imagem foi capturada
+        '''
+        return self._country
 
     def imprime_info(self) -> None:
         '''
@@ -143,6 +173,8 @@ class Imagem:
         print(f'Data: {self.data}')
         print(f'Latitude: {self.latitude}')
         print(f'Longitude: {self.longitude}')
+        print(f'Latitude: {self.city}')
+        print(f'Longitude: {self.country}')
         print('---')
 
     def redimensiona(self, nv_lar: float, nv_alt: float) -> None:
@@ -216,6 +248,70 @@ class BDImagens:
             if dini <= imagem.data <= dfim:
                 resultados.append(imagem)
         return resultados
+    
+    def buscar_por_cidade(self, city) -> List[Imagem]:
+        '''
+        Retorna uma lista contendo
+        todas as imagens do banco de dados
+        relacionada a uma cidade.
+        '''
+        resultados = []
+        for imagem in self._imagens:
+            if imagem.city == city:
+                resultados.append(imagem)
+        return resultados
+
+    def buscar_por_pais(self, country) -> List[Imagem]:
+        '''
+        Retorna uma lista contendo
+        todas as imagens do banco de dados
+        relacionada a um país.
+        '''
+        resultados = []
+        for imagem in self._imagens:
+            if imagem.country == country:
+                resultados.append(imagem)
+        return resultados
+    
+class View:
+    def __init__(self, root) -> None:
+        self.root = root
+        self.root.title('Locais')
+        self.root.geometry('800x300')
+        self.root.configure(padx=20, pady=20)
+
+        self.BDImagens = BDImagens()
+
+        self.mainSearch = tk.Label(root, text="Buscar por Imagens:")
+        self.initDateLabel = tk.Label(root, text="Data Inicial:")
+        self.finalDateLabel = tk.Label(root, text="Data Final:")
+        self.nomeLabel = tk.Label(root, text="Nome:")
+        self.cityLabel = tk.Label(root, text="Cidade:")
+        self.countryLabel = tk.Label(root, text="País:")
+
+        self.inputNome = tk.Entry(root)
+        self.inputInitDate = tk.Entry(root)
+        self.inputFinalDate = tk.Entry(root)
+        self.inputCity = tk.Entry(root)
+        self.inputCountry = tk.Entry(root)
+
+        self.buttonInitDate = tk.Button(root, text='Buscar')
+
+    def searchImage(self)  -> List[Imagem]:
+        mstringNome = self.inputNome.get()
+        mstringInitDate = self.inputInitDate.get()
+        mstringFinalDate = self.inputFinalDate.get()
+        mstringCity = self.inputCity.get()
+        mstringCountry = self.inputCountry.get()
+
+        if mstringNome is not None:
+            BDImagens.busca_por_nome(mstringNome)
+        if mstringInitDate is not None and mstringFinalDate is not None:
+            BDImagens.busca_por_data(mstringInitDate, mstringFinalDate)
+        if mstringCity is not None:
+            BDImagens.buscar_por_cidade(mstringCity)
+        if mstringCountry is not None:
+            BDImagens.buscar_por_pais(mstringCountry)
 
 def main():
     bd = BDImagens('dataset1/index')
@@ -238,6 +334,10 @@ def main():
     print(f'Imagens capturadas entre {d1} e {d2}:')
     for img in bd.busca_por_data(d1, d2):
         print(img.data)
+
+    root = tk.Tk()
+    View(root)
+    root.mainloop()
 
 if __name__ == '__main__':
     main()
