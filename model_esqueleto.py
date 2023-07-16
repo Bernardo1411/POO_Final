@@ -1,11 +1,13 @@
 from datetime import datetime
-from PIL import Image
+from PIL import Image, ImageTk
 import PIL.ImageFile
 from PIL.ExifTags import TAGS, GPSTAGS
 from typing import List, Tuple
 import tkinter
 import tkintermapview
 import tkinter as tk
+from tkinter import filedialog
+import os
 
 def converte_graus_para_decimais(tup: Tuple[int, int, int], ref: str) -> float:
     '''
@@ -40,6 +42,7 @@ class Imagem:
         self._city = None
         self._country = None
         self._img = self.abre(nome)
+        self.img = ImageTk.PhotoImage(self._img.resize(size=(204, 153)))
         self._processa_EXIF()
 
     def __repr__(self) -> str:
@@ -61,7 +64,7 @@ class Imagem:
         tup_lon = None
         ref_lat = None
         ref_lon = None
-
+        print(self._nome)
         for c, v in self._img._getexif().items():
             if TAGS.get(c) == 'GPSInfo':
                 for gps_cod, gps_dado in v.items():
@@ -272,15 +275,18 @@ class BDImagens:
             if imagem.country == country:
                 resultados.append(imagem)
         return resultados
-    
+
 class View:
     def __init__(self, root) -> None:
         self.root = root
         self.root.title('Locais')
-        self.root.geometry('800x300')
+        self.root.geometry('1000x400')
         self.root.configure(padx=20, pady=20)
 
-        self.BDImagens = BDImagens()
+        self.index_file_path = None
+
+        self.BDImagens = BDImagens('dataset1/index')
+        self.BDImagens.processa()
 
         self.mainSearch = tk.Label(root, text="Buscar por Imagens:")
         self.initDateLabel = tk.Label(root, text="Data Inicial:")
@@ -295,46 +301,100 @@ class View:
         self.inputCity = tk.Entry(root)
         self.inputCountry = tk.Entry(root)
 
-        self.buttonInitDate = tk.Button(root, text='Buscar')
+        self.buttonPesquisar = tk.Button(root, text='Pesquisar', command=self.searchImage)
+        self.buttonReset = tk.Button(root, text='Redefinir', command=self.resetInputs)
+        self.buttonSelectIndexFile = tk.Button(root, text='Selecionar Arquivo de Índice', command=self.selectIndexFile)
 
-    def searchImage(self)  -> List[Imagem]:
+        self.mapview = tkintermapview.TkinterMapView(self.root)
+        self.mapview.set_position(0, 0)
+        self.mapview.set_zoom(0)
+
+        self.marker = []
+
+        self.mainSearch.grid(row=0, column=0, columnspan=2, pady=(0, 10))
+        self.initDateLabel.grid(row=1, column=0, sticky=tk.W)
+        self.finalDateLabel.grid(row=2, column=0, sticky=tk.W)
+        self.nomeLabel.grid(row=3, column=0, sticky=tk.W)
+        self.cityLabel.grid(row=4, column=0, sticky=tk.W)
+        self.countryLabel.grid(row=5, column=0, sticky=tk.W)
+
+        self.inputInitDate.grid(row=1, column=1)
+        self.inputFinalDate.grid(row=2, column=1)
+        self.inputNome.grid(row=3, column=1)
+        self.inputCity.grid(row=4, column=1)
+        self.inputCountry.grid(row=5, column=1)
+
+        self.buttonPesquisar.grid(row=6, column=0, sticky=tk.W, pady=(20, 0))
+        self.buttonReset.grid(row=6, column=1, sticky=tk.W, pady=(20, 0))
+        self.buttonSelectIndexFile.grid(row=7, column=0, columnspan=2, pady=(20, 0))
+
+        self.mapview.grid(row=0, column=2, rowspan=7, padx=(20, 0),sticky=tk.N)
+
+    def selectIndexFile(self) -> None:
+        initial_dir = os.path.dirname(os.path.abspath(__file__))
+        self.index_file_path = filedialog.askopenfilename(initialdir=initial_dir, filetypes=[('Index Files', 'index')])
+        if self.index_file_path:
+            self.BDImagens = BDImagens(self.index_file_path)
+            self.BDImagens.processa()
+
+    def searchImage(self) -> None:
         mstringNome = self.inputNome.get()
         mstringInitDate = self.inputInitDate.get()
         mstringFinalDate = self.inputFinalDate.get()
         mstringCity = self.inputCity.get()
         mstringCountry = self.inputCountry.get()
 
-        if mstringNome is not None:
-            BDImagens.busca_por_nome(mstringNome)
-        if mstringInitDate is not None and mstringFinalDate is not None:
-            BDImagens.busca_por_data(mstringInitDate, mstringFinalDate)
-        if mstringCity is not None:
-            BDImagens.buscar_por_cidade(mstringCity)
-        if mstringCountry is not None:
-            BDImagens.buscar_por_pais(mstringCountry)
+        if mstringNome:
+            images = self.BDImagens.busca_por_nome(mstringNome)
+        elif mstringInitDate and mstringFinalDate:
+            d1 = datetime.strptime(mstringInitDate, '%Y-%m-%d')
+            d2 = datetime.strptime(mstringFinalDate, '%Y-%m-%d')
+            images = self.BDImagens.busca_por_data(d1, d2)
+        elif mstringCity:
+            images = self.BDImagens.buscar_por_cidade(mstringCity)
+        elif mstringCountry:
+            images = self.BDImagens.buscar_por_pais(mstringCountry)
+        else:
+            images = self.BDImagens.todas()
+
+        self.showImagesOnMap(images)
+
+    def showImagesOnMap(self, images: List[Imagem]) -> None:
+        self.mapview.set_position(0, 0)
+        self.mapview.set_zoom(0)
+        self.mapview.delete_all_marker()
+
+        col = 10
+        ln = 0
+        idx = 0
+
+        for image in images:
+            lb_img = tk.Label(self.root, image=image.img)
+            lb_img.grid(row=ln, column=col, rowspan=2, padx=(20, 0), sticky=tk.W+tk.N)
+            self.mapview.set_marker(image.latitude, image.longitude, text=image.nome)
+            self.mapview.set_position(image.latitude, image.longitude)
+            self.mapview.set_address(image.nome)
+            self.mapview.set_zoom(8)
+            if idx%2 != 0:
+                col = 10
+                ln = ln + 2
+            else:
+                col = col + 2
+            
+            idx = idx + 1
+
+    def resetInputs(self) -> None:
+        self.inputNome.delete(0, tk.END)
+        self.inputInitDate.delete(0, tk.END)
+        self.inputFinalDate.delete(0, tk.END)
+        self.inputCity.delete(0, tk.END)
+        self.inputCountry.delete(0, tk.END)
+
+        self.mapview.set_position(0, 0)
+        self.mapview.set_zoom(0)
+        self.mapview.delete_all_marker()
 
 def main():
-    bd = BDImagens('dataset1/index')
-    bd.processa()
-
-    # Mostra as informações de todas as imagens do banco de dados
-    print('Imagens do Banco de Dados:')
-    for img in bd.todas():
-        img.imprime_info()
-
-    # Mostra os nomes das imagens que possuam texto no seu nome
-    texto = '06'
-    print(f'Imagens com o texto "{texto}" no nome:')
-    for img in bd.busca_por_nome(texto):
-        print(img.nome)
-
-    # Mostra as datas das imagens capturadas entre d1 e d2
-    d1 = datetime(2021, 1, 1)
-    d2 = datetime(2023, 1, 1)
-    print(f'Imagens capturadas entre {d1} e {d2}:')
-    for img in bd.busca_por_data(d1, d2):
-        print(img.data)
-
     root = tk.Tk()
     View(root)
     root.mainloop()
